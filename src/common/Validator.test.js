@@ -8,6 +8,20 @@ import Joi from 'joi';
 import * as Validator from './Validator';
 
 describe('common/Validator', () => {
+    describe('appearance configuration updates', () => {
+        it.each(['workspace', 'system', 'light', 'dark'])('accepts %s', (mode) => {
+            expect(Validator.configurationUpdatesSchema.validate([{key: 'appearanceMode', data: mode}]).error).toBeUndefined();
+        });
+
+        it.each(['invalid', true, null, undefined])('rejects invalid appearance mode %s', (mode) => {
+            expect(Validator.configurationUpdatesSchema.validate([{key: 'appearanceMode', data: mode}]).error).toBeDefined();
+        });
+
+        it('rejects a mixed batch containing an invalid update', () => {
+            expect(Validator.configurationUpdatesSchema.validate([{key: 'themeSyncing', data: true}, {key: 'appearanceMode', data: 'invalid'}]).error).toBeDefined();
+        });
+    });
+
     describe('validateV0ConfigData', () => {
         const config = {url: 'http://server-1.com'};
 
@@ -230,7 +244,7 @@ describe('common/Validator', () => {
         };
 
         it('should validate v4 config data', () => {
-            expect(Validator.validateV4ConfigData(config)).toStrictEqual(config);
+            expect(Validator.validateV4ConfigData(config)).toStrictEqual({...config, appearanceMode: 'workspace'});
         });
 
         it('should remove invalid spellchecker URLs', () => {

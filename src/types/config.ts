@@ -33,7 +33,10 @@ export type UniqueView = {
 
 export type CurrentConfig = ConfigV4;
 
+export type AppearanceMode = 'workspace' | 'system' | 'light' | 'dark';
+
 export type ConfigV4 = {
+    appearanceMode?: AppearanceMode;
     version: 4;
     servers: ConfigServer[];
     showTrayIcon: boolean;

@@ -56,7 +56,9 @@ export function updateConfiguration(event: Electron.IpcMainEvent, properties: Ar
 export function handleUpdateTheme() {
     log.debug('Config.handleUpdateTheme');
 
-    Config.set('darkMode', nativeTheme.shouldUseDarkColors);
+    if (Config.darkMode !== nativeTheme.shouldUseDarkColors) {
+        Config.set('darkMode', nativeTheme.shouldUseDarkColors);
+    }
 }
 
 export function handleConfigUpdate(newConfig: CombinedConfig) {

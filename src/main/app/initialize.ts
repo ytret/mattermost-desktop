@@ -42,7 +42,8 @@ import {MATTERMOST_PROTOCOL} from 'common/constants';
 import {Logger} from 'common/log';
 import ServerManager from 'common/servers/serverManager';
 import {parseURL} from 'common/utils/url';
-import {ipcValidate} from 'common/Validator';
+import {configurationUpdatesSchema, ipcValidate} from 'common/Validator';
+import AppearanceController from 'main/appearanceController';
 import AppVersionManager from 'main/AppVersionManager';
 import AutoLauncher from 'main/AutoLauncher';
 import {configPath, updatePaths} from 'main/constants';
@@ -236,9 +237,7 @@ function initializeBeforeAppReady() {
         app.setAsDefaultProtocolClient(MATTERMOST_PROTOCOL);
     }
 
-    if (process.platform === 'darwin' || process.platform === 'win32') {
-        nativeTheme.on('updated', handleUpdateTheme);
-    }
+    nativeTheme.on('updated', handleUpdateTheme);
 
     protocol.registerSchemesAsPrivileged([
         {scheme: 'mattermost-desktop', privileges: {standard: true}},
@@ -267,7 +266,7 @@ function initializeInterCommunicationEventListeners() {
     ipcMain.handle(PING_DOMAIN, handlePingDomain);
     ipcMain.handle(GET_CONFIGURATION, handleGetConfiguration);
     ipcMain.handle(GET_LOCAL_CONFIGURATION, handleGetLocalConfiguration);
-    ipcMain.on(UPDATE_CONFIGURATION, updateConfiguration);
+    ipcMain.on(UPDATE_CONFIGURATION, ipcValidate(updateConfiguration, [configurationUpdatesSchema]));
 
     ipcMain.handle(GET_DARK_MODE, handleGetDarkMode);
     ipcMain.on(DOUBLE_CLICK_ON_WINDOW, handleDoubleClick);
@@ -311,9 +310,8 @@ async function initializeAfterAppReady() {
         log.warn('Failed to initialize secure storage cache:', {error});
     }
 
-    if (process.platform === 'darwin' || process.platform === 'win32') {
-        handleUpdateTheme();
-    }
+    AppearanceController.init();
+    handleUpdateTheme();
 
     MainWindow.show();
 

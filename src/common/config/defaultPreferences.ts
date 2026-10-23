@@ -47,6 +47,7 @@ const defaultPreferences: ConfigV4 = {
     hideOnStart: false,
     spellCheckerLocales: [],
     darkMode: false,
+    appearanceMode: 'workspace',
     lastActiveServer: 0,
     downloadLocation: getDefaultDownloadLocation(),
     startInFullscreen: false,

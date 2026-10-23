@@ -199,10 +199,13 @@ export default function createViewMenu() {
     if (process.platform === 'linux') {
         viewSubMenu.push({type: 'separator'});
         viewSubMenu.push({
-            label: localizeMessage('main.menus.app.view.toggleDarkMode', 'Toggle Dark Mode'),
-            click() {
-                Config.set('darkMode', !Config.darkMode);
-            },
+            label: localizeMessage('main.menus.app.view.appearance', 'Appearance'),
+            submenu: (['workspace', 'system', 'light', 'dark'] as const).map((mode, index) => ({
+                label: localizeMessage(`appearance.${mode}`, ['Use workspace theme', 'Follow system', 'Light', 'Dark'][index]),
+                type: 'radio',
+                checked: Config.appearanceMode === mode,
+                click: () => Config.set('appearanceMode', mode),
+            })),
         });
     }
 

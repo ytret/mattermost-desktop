@@ -102,6 +102,9 @@ export class ThemeManager {
     };
 
     private updateMainViews = () => {
+        if (!Config.themeSyncing) {
+            return;
+        }
         const serverId = ServerManager.getCurrentServerId();
         if (!serverId) {
             this.resetThemeSource();
@@ -118,7 +121,7 @@ export class ThemeManager {
             });
             return;
         }
-        if (!server.theme.isUsingSystemTheme) {
+        if (!server.theme.isUsingSystemTheme && !(process.platform === 'linux' && Config.appearanceMode !== 'workspace')) {
             const themeSource = isLightColor(server.theme.centerChannelBg || '#fff') ? 'light' : 'dark';
             if (nativeTheme.themeSource !== themeSource) {
                 nativeTheme.themeSource = themeSource;
@@ -130,11 +133,14 @@ export class ThemeManager {
     };
 
     private updatePopoutViews = (viewId: string) => {
+        if (!Config.themeSyncing) {
+            return;
+        }
         const popoutViews = this.popoutViews.get(viewId);
         if (popoutViews) {
             let theme = this.popoutThemes.get(viewId);
             if (!theme) {
-                theme = ServerManager.getServer(viewId)?.theme;
+                theme = ServerManager.getServer(ViewManager.getView(viewId)?.serverId || viewId)?.theme;
             }
             if (!theme) {
                 popoutViews.forEach((view) => {
@@ -153,18 +159,14 @@ export class ThemeManager {
             return undefined;
         }
 
-        let popoutServerId;
-        this.popoutViews.forEach((views, serverId) => {
+        let popoutViewId: string | undefined;
+        this.popoutViews.forEach((views, viewId) => {
             if (views.has(event.sender)) {
-                popoutServerId = serverId;
+                popoutViewId = viewId;
             }
         });
-        if (popoutServerId) {
-            const server = ServerManager.getServer(popoutServerId);
-            if (!server) {
-                return undefined;
-            }
-            return server.theme;
+        if (popoutViewId) {
+            return this.popoutThemes.get(popoutViewId) || ServerManager.getServer(ViewManager.getView(popoutViewId)?.serverId || popoutViewId)?.theme;
         }
 
         const serverId = ServerManager.getCurrentServerId();
@@ -179,6 +181,9 @@ export class ThemeManager {
     };
 
     private resetThemeSource = () => {
+        if (process.platform === 'linux' && Config.appearanceMode !== 'workspace') {
+            return;
+        }
         if (nativeTheme.themeSource !== 'system') {
             nativeTheme.themeSource = 'system';
         }

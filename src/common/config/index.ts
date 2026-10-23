@@ -102,7 +102,7 @@ export class Config extends EventEmitter {
     setMultiple = (newData: Partial<CurrentConfig>) => {
         log.debug('setMultiple');
 
-        if (newData.darkMode && newData.darkMode !== this.darkMode) {
+        if (newData.darkMode !== undefined && newData.darkMode !== this.darkMode) {
             this.emit('darkModeChange', newData.darkMode);
         }
         this.localConfigData = Object.assign({}, this.localConfigData, {...newData, servers: this.localConfigData?.servers});
@@ -145,6 +145,10 @@ export class Config extends EventEmitter {
     get version() {
         return this.combinedData?.version ?? defaultPreferences.version;
     }
+    get appearanceMode() {
+        return this.combinedData?.appearanceMode ?? 'workspace';
+    }
+
     get darkMode() {
         return this.combinedData?.darkMode ?? defaultPreferences.darkMode;
     }

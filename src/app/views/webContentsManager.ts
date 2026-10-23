@@ -36,6 +36,7 @@ import {ipcValidate, themeSchema} from 'common/Validator';
 import {ViewType, type MattermostView} from 'common/views/MattermostView';
 import ViewManager from 'common/views/viewManager';
 import {flushCookiesStore} from 'main/app/utils';
+import AppearanceController from 'main/appearanceController';
 import PermissionsManager from 'main/security/permissionsManager';
 import ThemeManager from 'main/themeManager';
 
@@ -69,9 +70,7 @@ export class WebContentsManager {
         ipcMain.on(UPDATE_SERVER_THEME, ipcValidate(this.handleUpdateServerTheme, [themeSchema.required()]));
         ipcMain.on(UPDATE_THEME, ipcValidate(this.handleUpdateTheme, [themeSchema.required()]));
 
-        if (process.platform !== 'linux') {
-            nativeTheme.on('updated', this.handleDarkModeChanged);
-        }
+        nativeTheme.on('updated', this.handleDarkModeChanged);
 
         ServerManager.on(SERVER_URL_CHANGED, this.handleServerURLChanged);
     }
@@ -206,6 +205,7 @@ export class WebContentsManager {
         const view = this.getViewByWebContentsId(e.sender.id);
         if (view) {
             view.setInitialized();
+            AppearanceController.trigger(view.serverId);
         }
     };
 

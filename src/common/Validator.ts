@@ -164,7 +164,10 @@ const configDataSchemaV3 = Joi.object<ConfigV3>({
     enableMetrics: Joi.boolean(),
 });
 
+export const appearanceModeSchema = Joi.string().valid('workspace', 'system', 'light', 'dark');
+
 const configDataSchemaV4 = Joi.object<ConfigV4>({
+    appearanceMode: appearanceModeSchema.default('workspace'),
     version: Joi.number().min(4).default(4),
     servers: Joi.array().items(Joi.object({
         name: Joi.string().required(),
@@ -208,6 +211,15 @@ const configDataSchemaV4 = Joi.object<ConfigV4>({
         embeddedOrigin: originOnlyStringSchema.required(),
     })).default([]),
 });
+
+export const configurationUpdatesSchema = Joi.array().items(Joi.object({
+    key: Joi.string().valid(...Object.keys(configDataSchemaV4.describe().keys)).required(),
+    data: Joi.any(),
+}).custom((update, helpers) => {
+    const schema = configDataSchemaV4.extract(update.key);
+    const result = (update.key === 'appearanceMode' ? schema.required() : schema).validate(update.data, {noDefaults: true, convert: false});
+    return result.error ? helpers.error('any.invalid') : update;
+}));
 
 // eg. data['community.mattermost.com'] = { data: 'certificate data', issuerName: 'COMODO RSA Domain Validation Secure Server CA'};
 const certificateStoreSchema = Joi.object().pattern(

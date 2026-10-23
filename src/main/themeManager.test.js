@@ -3,13 +3,14 @@
 
 'use strict';
 
-import {ipcMain} from 'electron';
+import {ipcMain, nativeTheme} from 'electron';
 
 import {
     DARK_MODE_CHANGE,
     RESET_THEME,
     UPDATE_THEME,
 } from 'common/communication';
+import Config from 'common/config';
 import ServerManager from 'common/servers/serverManager';
 import ViewManager from 'common/views/viewManager';
 
@@ -31,6 +32,7 @@ jest.mock('electron', () => {
 
 jest.mock('common/config', () => ({
     themeSyncing: true,
+    appearanceMode: 'workspace',
 }));
 
 jest.mock('main/utils', () => ({
@@ -58,6 +60,7 @@ jest.mock('common/views/viewManager', () => {
     return {
         on: jest.fn((event, handler) => mockViewManager.on(event, handler)),
         emit: jest.fn((event, ...args) => mockViewManager.emit(event, ...args)),
+        getView: jest.fn(),
         getViewsByServerId: jest.fn(),
         mockViewManager,
     };
@@ -96,6 +99,48 @@ describe('ThemeManager', () => {
         ServerManager.mockServerManager.removeAllListeners();
         ViewManager.mockViewManager.removeAllListeners();
         jest.resetAllMocks();
+    });
+
+    describe('Linux appearance automation', () => {
+        const platform = process.platform;
+        beforeAll(() => Object.defineProperty(process, 'platform', {value: 'linux'}));
+        afterAll(() => Object.defineProperty(process, 'platform', {value: platform}));
+        afterEach(() => {
+            Config.appearanceMode = 'workspace';
+            Config.themeSyncing = true;
+        });
+
+        it('copies exact workspace colors into main and popout wrappers without changing the system source', () => {
+            Config.appearanceMode = 'system';
+            nativeTheme.themeSource = 'system';
+            const theme = {sidebarBg: '#abcdef', centerChannelBg: '#ffffff', buttonBg: '#aabbcc'};
+            ServerManager.getCurrentServerId.mockReturnValue('server');
+            ServerManager.getServer.mockReturnValue({theme});
+            ViewManager.getView.mockReturnValue({serverId: 'server'});
+            ViewManager.getViewsByServerId.mockReturnValue([{id: 'popout', type: 'window'}]);
+            themeManager.registerMainWindowView(mockWebContents);
+            themeManager.registerPopoutView(mockWebContents2, 'popout');
+            themeManager.handleServerThemeChanged('server');
+            expect(mockWebContents.send).toHaveBeenCalledWith(UPDATE_THEME, theme);
+            expect(mockWebContents2.send).toHaveBeenCalledWith(UPDATE_THEME, theme);
+            expect(nativeTheme.themeSource).toBe('system');
+        });
+
+        it('uses desktop colors with syncing disabled and preserves the forced source', () => {
+            Config.appearanceMode = 'dark';
+            Config.themeSyncing = false;
+            nativeTheme.themeSource = 'dark';
+            themeManager.registerMainWindowView(mockWebContents);
+            themeManager.handleEmitConfiguration({}, {darkMode: true});
+            themeManager.handleServerThemeChanged('server');
+            themeManager.registerPopoutView(mockWebContents2, 'popout');
+            themeManager.updatePopoutTheme('popout', {sidebarBg: '#abcdef'});
+            expect(mockWebContents2.send).not.toHaveBeenCalledWith(UPDATE_THEME, expect.anything());
+            expect(mockWebContents.send).toHaveBeenCalledWith(RESET_THEME);
+            expect(mockWebContents.send).toHaveBeenCalledWith(DARK_MODE_CHANGE, true);
+            expect(mockWebContents.send).not.toHaveBeenCalledWith(UPDATE_THEME, expect.anything());
+            expect(nativeTheme.themeSource).toBe('dark');
+        });
     });
 
     describe('registerMainWindowView', () => {

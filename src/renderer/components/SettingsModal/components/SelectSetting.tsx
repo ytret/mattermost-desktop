@@ -2,7 +2,7 @@
 // See LICENSE.txt for license information.
 
 import classNames from 'classnames';
-import React, {useState} from 'react';
+import React, {useEffect, useState} from 'react';
 import ReactSelect from 'react-select';
 import type {ActionMeta, MultiValue, PropsValue, SingleValue} from 'react-select';
 
@@ -48,6 +48,10 @@ export default function SelectSetting({
     placeholder,
 }: Props) {
     const [value, setValue] = useState<PropsValue<Option>>(valueToOption(propValue, options));
+
+    useEffect(() => {
+        setValue(valueToOption(propValue, options));
+    }, [propValue, options]);
 
     const save = (newValue: PropsValue<Option>, actionMeta: ActionMeta<Option>) => {
         if (isMulti) {

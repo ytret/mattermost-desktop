@@ -75,6 +75,16 @@ describe('common/config', () => {
         mockJsonFileManager.setJson.mockResolvedValue(undefined);
     });
 
+    it('defaults to workspace appearance and persists an explicit selection', async () => {
+        const config = new Config();
+        config.init(configPath, appName, appPath);
+        expect(config.appearanceMode).toBe('workspace');
+        config.set('appearanceMode', 'system');
+        await Promise.resolve();
+        expect(config.appearanceMode).toBe('system');
+        expect(mockJsonFileManager.setJson).toHaveBeenCalledWith(expect.objectContaining({appearanceMode: 'system'}));
+    });
+
     it('should load buildConfig', () => {
         const config = new Config();
         config.reload = jest.fn();

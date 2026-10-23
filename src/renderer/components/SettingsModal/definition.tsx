@@ -37,6 +37,29 @@ const definition: (intl: IntlShape) => Promise<SettingsDefinition> = async (intl
             icon: 'settings-outline',
             settings: [
                 {
+                    id: 'appearanceMode',
+                    component: SelectSetting,
+                    condition: window.process.platform === 'linux',
+                    props: {
+                        label: (
+                            <FormattedMessage
+                                id='appearance.label'
+                                defaultMessage='Appearance'
+                            />
+                        ),
+                        subLabel: (
+                            <FormattedMessage
+                                id='appearance.description'
+                                defaultMessage='Select Quartz for light appearance or Onyx for dark appearance. Theme selections are saved to your account and synchronize to other clients. Use workspace theme stops automatic changes and keeps the last saved theme.'
+                            />
+                        ),
+                        options: ['workspace', 'system', 'light', 'dark'].map((value, index) => ({
+                            value,
+                            label: intl.formatMessage({id: `appearance.${value}`, defaultMessage: ['Use workspace theme', 'Follow system', 'Light', 'Dark'][index]}),
+                        })),
+                    },
+                },
+                {
                     id: 'autoCheckForUpdates',
                     component: UpdatesSetting,
                     condition: (await window.desktop.getLocalConfiguration()).canUpgrade,

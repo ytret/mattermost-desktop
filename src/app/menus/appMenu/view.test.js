@@ -476,24 +476,27 @@ describe('app/menus/appMenu/view', () => {
             expect(clearAllData).toHaveBeenCalled();
         });
 
-        it('should show toggle dark mode option on Linux', () => {
+        it('should expose all appearance modes on Linux', () => {
             const originalPlatform = process.platform;
             Object.defineProperty(process, 'platform', {
                 value: 'linux',
             });
 
             localizeMessage.mockImplementation((id) => {
-                if (id === 'main.menus.app.view.toggleDarkMode') {
-                    return 'Toggle Dark Mode';
+                if (id === 'main.menus.app.view.appearance') {
+                    return 'Appearance';
                 }
                 return id;
             });
 
             const menu = createViewMenu();
-            const toggleDarkModeMenuItem = menu.submenu.find((item) => item.label === 'Toggle Dark Mode');
+            const toggleDarkModeMenuItem = menu.submenu.find((item) => item.label === 'Appearance');
             expect(toggleDarkModeMenuItem).not.toBe(undefined);
-            toggleDarkModeMenuItem.click();
-            expect(Config.set).toHaveBeenCalledWith('darkMode', true);
+            expect(toggleDarkModeMenuItem.submenu).toHaveLength(4);
+            toggleDarkModeMenuItem.submenu.forEach((item, index) => {
+                item.click();
+                expect(Config.set).toHaveBeenLastCalledWith('appearanceMode', ['workspace', 'system', 'light', 'dark'][index]);
+            });
 
             Object.defineProperty(process, 'platform', {
                 value: originalPlatform,
