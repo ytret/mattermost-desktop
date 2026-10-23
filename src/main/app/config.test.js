@@ -4,15 +4,18 @@
 import os from 'os';
 import path from 'path';
 
-import {app, ipcMain} from 'electron';
+import {app, ipcMain, nativeTheme} from 'electron';
 
 import {EMIT_CONFIGURATION} from 'common/communication';
 import Config from 'common/config';
 import {getDefaultDownloadLocation} from 'common/config/defaultPreferences';
 import {setLoggingLevel} from 'common/log';
-import {handleConfigUpdate} from 'main/app/config';
+import {handleConfigUpdate, handleUpdateTheme} from 'main/app/config';
+import AppearanceController from 'main/appearanceController';
 import {handleMainWindowIsShown} from 'main/app/intercom';
 import AutoLauncher from 'main/AutoLauncher';
+
+jest.mock('main/appearanceController', () => ({__esModule: true, default: {update: jest.fn()}}));
 
 jest.mock('electron', () => ({
     app: {
@@ -21,6 +24,7 @@ jest.mock('electron', () => ({
         setPath: jest.fn(),
         getPath: jest.fn(() => '/valid/downloads/path'),
     },
+    nativeTheme: {shouldUseDarkColors: false},
     ipcMain: {
         emit: jest.fn(),
         on: jest.fn(),
@@ -58,6 +62,23 @@ jest.mock('app/mainWindow/mainWindow', () => ({
 }));
 
 describe('main/app/config', () => {
+    it('delegates Linux automatic appearance instead of persisting a stale Electron value', () => {
+        const platform = process.platform;
+        Object.defineProperty(process, 'platform', {value: 'linux'});
+        const mode = jest.spyOn(Config, 'appearanceMode', 'get').mockReturnValue('system');
+        const write = jest.spyOn(Config, 'set');
+        try {
+            nativeTheme.shouldUseDarkColors = false;
+            handleUpdateTheme();
+            expect(AppearanceController.update).toHaveBeenCalled();
+            expect(write).not.toHaveBeenCalled();
+        } finally {
+            mode.mockRestore();
+            write.mockRestore();
+            Object.defineProperty(process, 'platform', {value: platform});
+        }
+    });
+
     describe('handleConfigUpdate', () => {
         const originalPlatform = process.platform;
         const originalXDGDownloadDir = process.env.XDG_DOWNLOAD_DIR;

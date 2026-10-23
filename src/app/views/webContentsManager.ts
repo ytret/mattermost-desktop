@@ -71,6 +71,7 @@ export class WebContentsManager {
         ipcMain.on(UPDATE_THEME, ipcValidate(this.handleUpdateTheme, [themeSchema.required()]));
 
         nativeTheme.on('updated', this.handleDarkModeChanged);
+        Config.on('update', this.handleDarkModeChanged);
 
         ServerManager.on(SERVER_URL_CHANGED, this.handleServerURLChanged);
     }
@@ -309,7 +310,7 @@ export class WebContentsManager {
     };
 
     private handleDarkModeChanged = () => {
-        this.sendToAllViews(DARK_MODE_CHANGE, nativeTheme.shouldUseDarkColors);
+        this.sendToAllViews(DARK_MODE_CHANGE, AppearanceController.effectiveDark);
     };
 }
 

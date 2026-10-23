@@ -3,6 +3,10 @@
 
 import {session} from 'electron';
 
+import Config from 'common/config';
+import {DARK_MODE_CHANGE} from 'common/communication';
+import AppearanceController from 'main/appearanceController';
+
 import ServerManager from 'common/servers/serverManager';
 import ViewManager from 'common/views/viewManager';
 import {flushCookiesStore} from 'main/app/utils';
@@ -155,6 +159,24 @@ jest.mock('app/popoutMenu', () => ({
 }));
 
 describe('app/views/webContentsManager', () => {
+    it('broadcasts resolved darkness to every external view on configuration and native updates', () => {
+        const manager = new WebContentsManager();
+        const effective = jest.spyOn(AppearanceController, 'effectiveDark', 'get').mockReturnValue(true);
+        const send = jest.spyOn(manager, 'sendToAllViews').mockImplementation(() => {});
+        try {
+            Config.emit('update');
+            manager.handleDarkModeChanged();
+            expect(send).toHaveBeenCalledWith(DARK_MODE_CHANGE, true);
+            effective.mockReturnValue(false);
+            Config.emit('update');
+            expect(send).toHaveBeenLastCalledWith(DARK_MODE_CHANGE, false);
+        } finally {
+            Config.removeListener('update', manager.handleDarkModeChanged);
+            effective.mockRestore();
+            send.mockRestore();
+        }
+    });
+
     describe('getView', () => {
         const webContentsManager = new WebContentsManager();
         const mockView = {id: 'test-view', webContentsId: 1};

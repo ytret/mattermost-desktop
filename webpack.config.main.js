@@ -11,6 +11,11 @@ module.exports = merge(base, {
     entry: {
         index: './src/main/app/index.ts',
     },
+    resolve: {
+
+        // LinuxSystemTheme uses Node sockets for abstract addresses as well.
+        alias: {'abstract-socket': false},
+    },
     externals: {
         'macos-notification-state': 'require("macos-notification-state")',
         'windows-focus-assist': 'require("windows-focus-assist")',

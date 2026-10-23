@@ -6,6 +6,8 @@ import {nativeTheme} from 'electron';
 import {SERVER_LOGGED_IN_CHANGED, SERVER_REMOVED} from 'common/communication';
 import Config from 'common/config';
 import ServerManager from 'common/servers/serverManager';
+import LinuxSystemTheme from 'main/linuxSystemTheme';
+import ThemeManager from 'main/themeManager';
 import {PreferenceRequestError, requestPreferences, saveThemePreferences} from 'main/server/themePreferences';
 import {themePresets} from 'main/server/themePresets';
 
@@ -15,6 +17,11 @@ jest.mock('electron', () => {
     const {EventEmitter} = jest.requireActual('events');
     return {nativeTheme: Object.assign(new EventEmitter(), {themeSource: 'system', shouldUseDarkColors: false})};
 });
+jest.mock('main/linuxSystemTheme', () => {
+    const {EventEmitter} = jest.requireActual('events');
+    return {__esModule: true, default: Object.assign(new EventEmitter(), {init: jest.fn().mockResolvedValue(undefined), dispose: jest.fn(), preference: undefined})};
+});
+jest.mock('main/themeManager', () => ({__esModule: true, default: {restoreWorkspaceTheme: jest.fn()}}));
 jest.mock('common/config', () => {
     const {EventEmitter} = jest.requireActual('events');
     return {__esModule: true, default: Object.assign(new EventEmitter(), {set: jest.fn()})};
@@ -60,6 +67,12 @@ describe('Linux account appearance', () => {
         nativeTheme.removeAllListeners();
         config.appearanceMode = 'system';
         config.darkMode = false;
+        config.set.mockImplementation((key, value) => {
+            Object.assign(config, {[key]: value});
+            config.emit('update');
+        });
+        LinuxSystemTheme.preference = undefined;
+        jest.mocked(LinuxSystemTheme.init).mockResolvedValue();
         native.shouldUseDarkColors = false;
         nativeTheme.themeSource = 'system';
         server = {id: 'server', url: new URL('https://example.com/mattermost/'), isLoggedIn: true};
@@ -69,7 +82,135 @@ describe('Linux account appearance', () => {
         save.mockResolvedValue({status: 'OK'});
         controller = new AppearanceController();
     });
-    afterEach(() => jest.useRealTimers());
+    afterEach(() => {
+        controller.dispose();
+        expect(jest.getTimerCount()).toBe(0);
+        jest.useRealTimers();
+    });
+
+    it('saves every portal transition with Electron permanently false, ignoring stale events', async () => {
+        LinuxSystemTheme.preference = 'dark';
+        await controller.init();
+        await flush();
+        for (const preference of ['light', 'dark', 'light'] as const) {
+            LinuxSystemTheme.preference = preference;
+            LinuxSystemTheme.emit('changed');
+            nativeTheme.emit('updated');
+            // eslint-disable-next-line no-await-in-loop
+            await flush();
+        }
+        expect(native.shouldUseDarkColors).toBe(false);
+        expect(save.mock.calls.map((call) => JSON.parse(call[1][0].value))).toEqual([
+            themePresets.onyx, themePresets.quartz, themePresets.onyx, themePresets.quartz,
+        ]);
+        expect(config.appearanceMode).toBe('system');
+        expect(config.darkMode).toBe(false);
+    });
+
+    it('restores the system source before reading fallback', async () => {
+        LinuxSystemTheme.preference = 'dark';
+        await controller.init();
+        await flush();
+        expect(config.darkMode).toBe(true);
+        LinuxSystemTheme.preference = undefined;
+        LinuxSystemTheme.emit('changed');
+        await flush();
+        expect(nativeTheme.themeSource).toBe('system');
+        expect(config.darkMode).toBe(false);
+        expect(JSON.parse(save.mock.calls[1][1][0].value)).toEqual(themePresets.quartz);
+    });
+
+    it('uses explicit fixed modes, remembers portal changes, and releases workspace ownership', async () => {
+        config.appearanceMode = 'dark';
+        await controller.init();
+        await flush();
+        expect(config.darkMode).toBe(true);
+        LinuxSystemTheme.preference = 'light';
+        LinuxSystemTheme.emit('changed');
+        await flush();
+        expect(save).toHaveBeenCalledTimes(1);
+        config.appearanceMode = 'system';
+        config.emit('update');
+        await flush();
+        expect(nativeTheme.themeSource).toBe('light');
+        expect(save).toHaveBeenCalledTimes(2);
+        config.appearanceMode = 'workspace';
+        config.emit('update');
+        expect(nativeTheme.themeSource).toBe('system');
+        expect(ThemeManager.restoreWorkspaceTheme).toHaveBeenCalledTimes(1);
+        LinuxSystemTheme.preference = 'dark';
+        LinuxSystemTheme.emit('changed');
+        await flush();
+        expect(save).toHaveBeenCalledTimes(2);
+    });
+
+    it('releases the source before reapplying the workspace theme', async () => {
+        LinuxSystemTheme.preference = 'dark';
+        await controller.init();
+        await flush();
+        jest.mocked(ThemeManager.restoreWorkspaceTheme).mockImplementationOnce(() => {
+            expect(nativeTheme.themeSource).toBe('system');
+            nativeTheme.themeSource = 'light';
+        });
+        config.appearanceMode = 'workspace';
+        config.emit('update');
+        expect(nativeTheme.themeSource).toBe('light');
+        await flush();
+        expect(save).toHaveBeenCalledTimes(1);
+    });
+
+    it('does not write for a mode change that preserves effective appearance', async () => {
+        LinuxSystemTheme.preference = 'dark';
+        await controller.init();
+        await flush();
+        config.appearanceMode = 'dark';
+        config.emit('update');
+        await flush();
+        expect(save).toHaveBeenCalledTimes(1);
+    });
+
+    it('ignores initial completion after disposal', async () => {
+        let finish = () => {};
+        jest.mocked(LinuxSystemTheme.init).mockReturnValue(new Promise((resolve) => {
+            finish = resolve;
+        }));
+        const initial = controller.init();
+        controller.dispose();
+        finish();
+        await initial;
+        await flush();
+        expect(save).not.toHaveBeenCalled();
+        expect(Config.listenerCount('update')).toBe(0);
+        expect(nativeTheme.listenerCount('updated')).toBe(0);
+    });
+
+    it('waits for the initial lookup and initializes only once', async () => {
+        let finish = () => {};
+        jest.mocked(LinuxSystemTheme.init).mockReturnValue(new Promise((resolve) => {
+            finish = resolve;
+        }));
+        const initial = controller.init();
+        expect(controller.init()).toBe(initial);
+        controller.trigger(server.id);
+        await flush();
+        expect(save).not.toHaveBeenCalled();
+        LinuxSystemTheme.preference = 'dark';
+        finish();
+        await initial;
+        await flush();
+        expect(save).toHaveBeenCalledTimes(1);
+        expect(JSON.parse(save.mock.calls[0][1][0].value)).toEqual(themePresets.onyx);
+    });
+
+    it.each(['win32', 'darwin'])('does not initialize the provider on %s', async (otherPlatform) => {
+        Object.defineProperty(process, 'platform', {value: otherPlatform});
+        try {
+            await controller.init();
+            expect(LinuxSystemTheme.init).not.toHaveBeenCalled();
+        } finally {
+            Object.defineProperty(process, 'platform', {value: 'linux'});
+        }
+    });
 
     it('keeps workspace mode passive by default', async () => {
         config.appearanceMode = 'workspace';
@@ -180,6 +321,21 @@ describe('Linux account appearance', () => {
         await flush();
         expect(save).toHaveBeenCalledTimes(2);
         expect(JSON.parse(save.mock.calls[1][1][0].value)).toEqual(themePresets.onyx);
+    });
+
+    it('cancels an in-flight lookup on logout', async () => {
+        let finish: (value: {id: string}) => void = () => {};
+        request.mockImplementationOnce(() => new Promise((resolve) => {
+            finish = resolve;
+        }));
+        await controller.init();
+        await flush();
+        server.isLoggedIn = false;
+        ServerManager.emit(SERVER_LOGGED_IN_CHANGED, server.id, false);
+        finish({id: 'user'});
+        await flush();
+        expect(save).not.toHaveBeenCalled();
+        expect(request).toHaveBeenCalledTimes(1);
     });
 
     it('handles signed-in servers independently and triggers after login', async () => {

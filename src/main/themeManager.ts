@@ -62,6 +62,11 @@ export class ThemeManager {
         this.updatePopoutViews(viewId);
     };
 
+    restoreWorkspaceTheme = () => {
+        this.resetThemeSource();
+        this.updateMainViews();
+    };
+
     private handleEmitConfiguration = (event: IpcMainEvent, config: CombinedConfig) => {
         if (Config.themeSyncing) {
             ServerManager.getAllServers().forEach((server) => {
@@ -121,8 +126,11 @@ export class ThemeManager {
             });
             return;
         }
-        if (!server.theme.isUsingSystemTheme && !(process.platform === 'linux' && Config.appearanceMode !== 'workspace')) {
-            const themeSource = isLightColor(server.theme.centerChannelBg || '#fff') ? 'light' : 'dark';
+        if (!(process.platform === 'linux' && Config.appearanceMode !== 'workspace')) {
+            let themeSource: 'system' | 'light' | 'dark' = 'system';
+            if (!server.theme.isUsingSystemTheme) {
+                themeSource = isLightColor(server.theme.centerChannelBg || '#fff') ? 'light' : 'dark';
+            }
             if (nativeTheme.themeSource !== themeSource) {
                 nativeTheme.themeSource = themeSource;
             }

@@ -9,6 +9,7 @@ import {EMIT_CONFIGURATION} from 'common/communication';
 import Config from 'common/config';
 import {Logger, setLoggingLevel} from 'common/log';
 import ServerManager from 'common/servers/serverManager';
+import AppearanceController from 'main/appearanceController';
 import AutoLauncher from 'main/AutoLauncher';
 
 import type {CombinedConfig, CurrentConfig} from 'types/config';
@@ -56,6 +57,10 @@ export function updateConfiguration(event: Electron.IpcMainEvent, properties: Ar
 export function handleUpdateTheme() {
     log.debug('Config.handleUpdateTheme');
 
+    if (process.platform === 'linux' && Config.appearanceMode !== 'workspace') {
+        AppearanceController.update();
+        return;
+    }
     if (Config.darkMode !== nativeTheme.shouldUseDarkColors) {
         Config.set('darkMode', nativeTheme.shouldUseDarkColors);
     }

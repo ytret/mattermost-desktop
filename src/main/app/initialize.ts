@@ -310,7 +310,11 @@ async function initializeAfterAppReady() {
         log.warn('Failed to initialize secure storage cache:', {error});
     }
 
-    AppearanceController.init();
+    app.once('will-quit', AppearanceController.dispose);
+    await AppearanceController.init();
+    if (global.willAppQuit) {
+        return;
+    }
     handleUpdateTheme();
 
     MainWindow.show();

@@ -13,6 +13,8 @@ import LocalNetworkAccessManager from 'main/security/localNetworkAccess';
 import {initialize} from './initialize';
 import {clearAppCache, getDeeplinkingURL, wasUpdated} from './utils';
 
+jest.mock('main/appearanceController', () => ({__esModule: true, default: {init: jest.fn().mockResolvedValue(undefined), dispose: jest.fn()}}));
+
 jest.mock('fs', () => ({
     accessSync: jest.fn(),
     existsSync: jest.fn().mockReturnValue(false),
@@ -36,6 +38,7 @@ jest.mock('path', () => {
 jest.mock('electron', () => ({
     app: {
         on: jest.fn(),
+        once: jest.fn(),
         handle: jest.fn(),
         exit: jest.fn(),
         getPath: jest.fn(),

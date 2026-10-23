@@ -110,9 +110,9 @@ describe('ThemeManager', () => {
             Config.themeSyncing = true;
         });
 
-        it('copies exact workspace colors into main and popout wrappers without changing the system source', () => {
-            Config.appearanceMode = 'system';
-            nativeTheme.themeSource = 'system';
+        it.each(['system', 'light', 'dark'])('copies workspace colors without overriding the resolved source in %s mode', (mode) => {
+            Config.appearanceMode = mode;
+            nativeTheme.themeSource = 'dark';
             const theme = {sidebarBg: '#abcdef', centerChannelBg: '#ffffff', buttonBg: '#aabbcc'};
             ServerManager.getCurrentServerId.mockReturnValue('server');
             ServerManager.getServer.mockReturnValue({theme});
@@ -123,7 +123,7 @@ describe('ThemeManager', () => {
             themeManager.handleServerThemeChanged('server');
             expect(mockWebContents.send).toHaveBeenCalledWith(UPDATE_THEME, theme);
             expect(mockWebContents2.send).toHaveBeenCalledWith(UPDATE_THEME, theme);
-            expect(nativeTheme.themeSource).toBe('system');
+            expect(nativeTheme.themeSource).toBe('dark');
         });
 
         it('uses desktop colors with syncing disabled and preserves the forced source', () => {

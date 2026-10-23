@@ -7,9 +7,11 @@ import {SERVER_LOGGED_IN_CHANGED, SERVER_REMOVED, SERVER_URL_CHANGED} from 'comm
 import Config from 'common/config';
 import {Logger} from 'common/log';
 import ServerManager from 'common/servers/serverManager';
+import LinuxSystemTheme from 'main/linuxSystemTheme';
 import {preferenceURL, PreferenceRequestError, requestPreferences, saveThemePreferences} from 'main/server/themePreferences';
 import type {ThemePreference} from 'main/server/themePreferences';
 import {themePresets} from 'main/server/themePresets';
+import ThemeManager from 'main/themeManager';
 
 import type {AppearanceMode} from 'types/config';
 
@@ -22,41 +24,103 @@ export class AppearanceController {
     private dark?: boolean;
     private work = new Map<string, Work>();
 
-    init = () => {
-        if (process.platform !== 'linux') {
-            return;
-        }
-        Config.on('update', this.update);
-        nativeTheme.on('updated', this.update);
-        ServerManager.on(SERVER_LOGGED_IN_CHANGED, this.loginChanged);
-        ServerManager.on(SERVER_REMOVED, this.cancel);
-        ServerManager.on(SERVER_URL_CHANGED, (id: string) => {
-            this.cancel(id);
-            this.trigger(id);
-        });
-        this.update();
-    };
+    private initialized?: Promise<void>;
+    private ready = false;
+    private updating = false;
+    private lifecycle = 0;
 
-    private update = () => {
-        const mode = Config.appearanceMode;
-        const changedMode = this.mode !== mode;
-        this.mode = mode;
-        if (mode !== 'workspace') {
-            const source = mode === 'system' ? 'system' : mode;
-            if (nativeTheme.themeSource !== source) {
-                nativeTheme.themeSource = source;
+    get effectiveDark() {
+        if (process.platform === 'linux') {
+            const mode = Config.appearanceMode;
+            if (mode === 'light' || mode === 'dark') {
+                return mode === 'dark';
+            }
+            if (mode === 'system' && LinuxSystemTheme.preference) {
+                return LinuxSystemTheme.preference === 'dark';
             }
         }
-        const dark = nativeTheme.shouldUseDarkColors;
-        const changed = changedMode || dark !== this.dark;
-        this.dark = dark;
-        if (Config.darkMode !== dark) {
-            Config.set('darkMode', dark);
+        return nativeTheme.shouldUseDarkColors;
+    }
+
+    init = (): Promise<void> => {
+        if (process.platform !== 'linux') {
+            return Promise.resolve();
         }
-        if (mode === 'workspace') {
-            this.work.forEach((_, id) => this.cancel(id));
-        } else if (changed) {
-            ServerManager.getAllServers().forEach((server) => this.trigger(server.id));
+        if (this.initialized) {
+            return this.initialized;
+        }
+        const lifecycle = ++this.lifecycle;
+        Config.on('update', this.update);
+        nativeTheme.on('updated', this.update);
+        LinuxSystemTheme.on('changed', this.update);
+        ServerManager.on(SERVER_LOGGED_IN_CHANGED, this.loginChanged);
+        ServerManager.on(SERVER_REMOVED, this.cancel);
+        ServerManager.on(SERVER_URL_CHANGED, this.urlChanged);
+        this.initialized = LinuxSystemTheme.init().then(() => {
+            if (lifecycle === this.lifecycle) {
+                this.ready = true;
+                this.update();
+            }
+        });
+        return this.initialized;
+    };
+
+    dispose = () => {
+        this.lifecycle++;
+        this.ready = false;
+        Config.removeListener('update', this.update);
+        nativeTheme.removeListener('updated', this.update);
+        LinuxSystemTheme.removeListener('changed', this.update);
+        ServerManager.removeListener(SERVER_LOGGED_IN_CHANGED, this.loginChanged);
+        ServerManager.removeListener(SERVER_REMOVED, this.cancel);
+        ServerManager.removeListener(SERVER_URL_CHANGED, this.urlChanged);
+        this.work.forEach((_, id) => this.cancel(id));
+        LinuxSystemTheme.dispose();
+        this.initialized = undefined;
+        this.mode = undefined;
+        this.dark = undefined;
+    };
+
+    private urlChanged = (id: string) => {
+        this.cancel(id);
+        this.trigger(id);
+    };
+
+    update = () => {
+        if (!this.ready || this.updating) {
+            return;
+        }
+        this.updating = true;
+        try {
+            const mode = Config.appearanceMode;
+            const previousMode = this.mode;
+            this.mode = mode;
+            if (mode === 'workspace') {
+                this.work.forEach((_, id) => this.cancel(id));
+                if (previousMode && previousMode !== 'workspace') {
+                    // Release our override before the workspace reapplies its theme.
+                    nativeTheme.themeSource = 'system';
+                    ThemeManager.restoreWorkspaceTheme();
+                }
+            } else {
+                const source = mode === 'system' ? LinuxSystemTheme.preference || 'system' : mode;
+                if (nativeTheme.themeSource !== source) {
+                    nativeTheme.themeSource = source;
+                }
+            }
+
+            // Read Electron only after restoring its system source on fallback.
+            const dark = this.effectiveDark;
+            const changed = dark !== this.dark;
+            this.dark = dark;
+            if (Config.darkMode !== dark) {
+                Config.set('darkMode', dark);
+            }
+            if (mode !== 'workspace' && (changed || previousMode === 'workspace' || !previousMode)) {
+                ServerManager.getAllServers().forEach((server) => this.trigger(server.id));
+            }
+        } finally {
+            this.updating = false;
         }
     };
 
@@ -80,7 +144,7 @@ export class AppearanceController {
     };
 
     trigger = (id: string) => {
-        if (this.mode === 'workspace' || !this.mode || !ServerManager.getServer(id)?.isLoggedIn) {
+        if (!this.ready || this.mode === 'workspace' || !this.mode || !ServerManager.getServer(id)?.isLoggedIn) {
             return;
         }
         const job = this.work.get(id) || {generation: 0, running: false, attempt: 0};
@@ -92,7 +156,7 @@ export class AppearanceController {
         this.run(id, job);
     };
 
-    private active = (id: string) => this.mode !== 'workspace' && ServerManager.getServer(id)?.isLoggedIn;
+    private active = (id: string) => this.ready && this.mode !== 'workspace' && ServerManager.getServer(id)?.isLoggedIn;
 
     private run = async (id: string, job: Work) => {
         if (job.running || !this.active(id)) {
