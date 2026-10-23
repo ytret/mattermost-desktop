@@ -26,6 +26,9 @@ const config = {
         output: 'release',
     },
     extraMetadata: {
+
+        // Restore build metadata stripped by electron-builder's package normalization.
+        version: pkg.version,
         main: 'index.js',
     },
     files: [
