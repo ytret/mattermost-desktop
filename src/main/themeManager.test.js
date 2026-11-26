@@ -13,6 +13,7 @@ import {
 import Config from 'common/config';
 import ServerManager from 'common/servers/serverManager';
 import ViewManager from 'common/views/viewManager';
+import {themePresets} from 'main/server/themePresets';
 
 import {ThemeManager} from './themeManager';
 
@@ -33,6 +34,7 @@ jest.mock('electron', () => {
 jest.mock('common/config', () => ({
     themeSyncing: true,
     appearanceMode: 'workspace',
+    darkMode: false,
 }));
 
 jest.mock('main/utils', () => ({
@@ -108,22 +110,58 @@ describe('ThemeManager', () => {
         afterEach(() => {
             Config.appearanceMode = 'workspace';
             Config.themeSyncing = true;
+            Config.darkMode = false;
         });
 
-        it.each(['system', 'light', 'dark'])('copies workspace colors without overriding the resolved source in %s mode', (mode) => {
+        it.each([
+            ['system', true, themePresets.onyx, themePresets.quartz],
+            ['system', false, themePresets.quartz, themePresets.onyx],
+            ['light', false, themePresets.quartz, themePresets.onyx],
+            ['dark', true, themePresets.onyx, themePresets.quartz],
+        ])('uses the local palette in %s mode with darkMode=%s', (mode, darkMode, preset, staleTheme) => {
             Config.appearanceMode = mode;
-            nativeTheme.themeSource = 'dark';
-            const theme = {sidebarBg: '#abcdef', centerChannelBg: '#ffffff', buttonBg: '#aabbcc'};
+            Config.darkMode = darkMode;
+            nativeTheme.themeSource = darkMode ? 'dark' : 'light';
             ServerManager.getCurrentServerId.mockReturnValue('server');
-            ServerManager.getServer.mockReturnValue({theme});
+            ServerManager.getServer.mockReturnValue({theme: staleTheme});
             ViewManager.getView.mockReturnValue({serverId: 'server'});
             ViewManager.getViewsByServerId.mockReturnValue([{id: 'popout', type: 'window'}]);
             themeManager.registerMainWindowView(mockWebContents);
             themeManager.registerPopoutView(mockWebContents2, 'popout');
+
+            // A config update must apply even before any workspace theme event arrives.
+            themeManager.handleEmitConfiguration({}, {darkMode});
             themeManager.handleServerThemeChanged('server');
+            themeManager.updateMainViews();
+            themeManager.updatePopoutTheme('popout', staleTheme);
+
+            [mockWebContents, mockWebContents2].forEach((view) => {
+                expect(view.send.mock.calls).toEqual([
+                    [UPDATE_THEME, expect.objectContaining({centerChannelBg: preset.centerChannelBg, centerChannelColor: preset.centerChannelColor})],
+                    [DARK_MODE_CHANGE, darkMode],
+                ]);
+                expect(themeManager.handleGetTheme({sender: view})).toMatchObject({centerChannelBg: preset.centerChannelBg});
+            });
+            expect(nativeTheme.themeSource).toBe(darkMode ? 'dark' : 'light');
+        });
+
+        it('restores workspace and popout colors after switching back to workspace mode', () => {
+            Config.appearanceMode = 'system';
+            const theme = {centerChannelBg: '#123456'};
+            const popoutTheme = {centerChannelBg: '#abcdef'};
+            ServerManager.getAllServers.mockReturnValue([{id: 'server'}]);
+            ServerManager.getCurrentServerId.mockReturnValue('server');
+            ServerManager.getServer.mockReturnValue({theme});
+            ViewManager.getViewsByServerId.mockReturnValue([{id: 'popout', type: 'window'}]);
+            themeManager.registerMainWindowView(mockWebContents);
+            themeManager.registerPopoutView(mockWebContents2, 'popout');
+            themeManager.updatePopoutTheme('popout', popoutTheme);
+
+            Config.appearanceMode = 'workspace';
+            themeManager.handleEmitConfiguration({}, {darkMode: false});
+
             expect(mockWebContents.send).toHaveBeenCalledWith(UPDATE_THEME, theme);
-            expect(mockWebContents2.send).toHaveBeenCalledWith(UPDATE_THEME, theme);
-            expect(nativeTheme.themeSource).toBe('dark');
+            expect(mockWebContents2.send).toHaveBeenCalledWith(UPDATE_THEME, popoutTheme);
         });
 
         it('uses desktop colors with syncing disabled and preserves the forced source', () => {

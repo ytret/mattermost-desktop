@@ -19,6 +19,7 @@ import Config from 'common/config';
 import ServerManager from 'common/servers/serverManager';
 import {ViewType} from 'common/views/MattermostView';
 import ViewManager from 'common/views/viewManager';
+import {themePresets} from 'main/server/themePresets';
 import {isLightColor} from 'main/utils';
 
 import type {CombinedConfig} from 'types/config';
@@ -68,34 +69,28 @@ export class ThemeManager {
     };
 
     private handleEmitConfiguration = (event: IpcMainEvent, config: CombinedConfig) => {
-        if (Config.themeSyncing) {
+        const theme = this.getAppearanceTheme();
+        if (theme) {
+            this.forEachView((view) => view.send(UPDATE_THEME, theme));
+        } else if (Config.themeSyncing) {
             ServerManager.getAllServers().forEach((server) => {
                 this.handleServerThemeChanged(server.id);
             });
         } else {
             this.resetThemeSource();
-            this.mainWindowViews.forEach((view) => {
-                view.send(RESET_THEME);
-            });
-            this.popoutViews.forEach((views) => {
-                views.forEach((view) => {
-                    view.send(RESET_THEME);
-                });
-            });
+            this.forEachView((view) => view.send(RESET_THEME));
         }
 
-        this.mainWindowViews.forEach((view) => {
-            view.send(DARK_MODE_CHANGE, config.darkMode);
-        });
-        this.popoutViews.forEach((views) => {
-            views.forEach((view) => {
-                view.send(DARK_MODE_CHANGE, config.darkMode);
-            });
-        });
+        this.forEachView((view) => view.send(DARK_MODE_CHANGE, config.darkMode));
     };
 
+    private forEachView(callback: (view: WebContents) => void) {
+        this.mainWindowViews.forEach(callback);
+        this.popoutViews.forEach((views) => views.forEach(callback));
+    }
+
     private handleServerThemeChanged = (serverId: string) => {
-        if (!Config.themeSyncing) {
+        if (!Config.themeSyncing || this.usesDesktopAppearance) {
             return;
         }
 
@@ -107,7 +102,7 @@ export class ThemeManager {
     };
 
     private updateMainViews = () => {
-        if (!Config.themeSyncing) {
+        if (!Config.themeSyncing || this.usesDesktopAppearance) {
             return;
         }
         const serverId = ServerManager.getCurrentServerId();
@@ -126,14 +121,12 @@ export class ThemeManager {
             });
             return;
         }
-        if (!(process.platform === 'linux' && Config.appearanceMode !== 'workspace')) {
-            let themeSource: 'system' | 'light' | 'dark' = 'system';
-            if (!server.theme.isUsingSystemTheme) {
-                themeSource = isLightColor(server.theme.centerChannelBg || '#fff') ? 'light' : 'dark';
-            }
-            if (nativeTheme.themeSource !== themeSource) {
-                nativeTheme.themeSource = themeSource;
-            }
+        let themeSource: 'system' | 'light' | 'dark' = 'system';
+        if (!server.theme.isUsingSystemTheme) {
+            themeSource = isLightColor(server.theme.centerChannelBg || '#fff') ? 'light' : 'dark';
+        }
+        if (nativeTheme.themeSource !== themeSource) {
+            nativeTheme.themeSource = themeSource;
         }
         this.mainWindowViews.forEach((view) => {
             view.send(UPDATE_THEME, server.theme);
@@ -141,7 +134,7 @@ export class ThemeManager {
     };
 
     private updatePopoutViews = (viewId: string) => {
-        if (!Config.themeSyncing) {
+        if (!Config.themeSyncing || this.usesDesktopAppearance) {
             return;
         }
         const popoutViews = this.popoutViews.get(viewId);
@@ -166,6 +159,10 @@ export class ThemeManager {
         if (!Config.themeSyncing) {
             return undefined;
         }
+        const theme = this.getAppearanceTheme();
+        if (theme) {
+            return theme;
+        }
 
         let popoutViewId: string | undefined;
         this.popoutViews.forEach((views, viewId) => {
@@ -188,8 +185,22 @@ export class ThemeManager {
         return server.theme;
     };
 
+    private get usesDesktopAppearance() {
+        return process.platform === 'linux' && Config.appearanceMode !== 'workspace';
+    }
+
+    private getAppearanceTheme(): Theme | undefined {
+        if (!Config.themeSyncing || !this.usesDesktopAppearance) {
+            return undefined;
+        }
+
+        // Workspace theme events can lag behind changes to the desktop appearance.
+        const preset = Config.darkMode ? themePresets.onyx : themePresets.quartz;
+        return {...preset, isUsingSystemTheme: Config.appearanceMode === 'system'};
+    }
+
     private resetThemeSource = () => {
-        if (process.platform === 'linux' && Config.appearanceMode !== 'workspace') {
+        if (this.usesDesktopAppearance) {
             return;
         }
         if (nativeTheme.themeSource !== 'system') {
