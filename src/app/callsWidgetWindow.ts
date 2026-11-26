@@ -2,10 +2,11 @@
 // See LICENSE.txt for license information.
 
 import type {IpcMainEvent, Rectangle, Event, IpcMainInvokeEvent, WebContentsWillRedirectEventParams} from 'electron';
-import {BrowserWindow, desktopCapturer, dialog, ipcMain, screen, systemPreferences} from 'electron';
+import {BrowserWindow, desktopCapturer, ipcMain, screen, systemPreferences} from 'electron';
 import Joi from 'joi';
 
 import MainWindow from 'app/mainWindow/mainWindow';
+import MessageModal from 'app/mainWindow/modals/messageModal';
 import NavigationManager from 'app/navigationManager';
 import TabManager from 'app/tabs/tabManager';
 import type {MattermostWebContentsView} from 'app/views/MattermostWebContentsView';
@@ -213,6 +214,8 @@ export class CallsWidgetWindow {
         // Calls widget window is not supposed to navigate anywhere else.
         this.win.webContents.on('will-navigate', this.onNavigate);
         this.win.webContents.on('did-start-navigation', this.onNavigate);
+        this.win.webContents.on('devtools-focused', this.emitShortcutMenuUpdate);
+        this.win.webContents.on('devtools-closed', this.emitShortcutMenuUpdate);
         this.win.webContents.on('will-redirect', this.onRedirect);
         this.win.webContents.on('will-frame-navigate', this.onFrameNavigate);
 
@@ -274,6 +277,8 @@ export class CallsWidgetWindow {
     /**
      * BrowserWindow/WebContents handlers
      */
+
+    private emitShortcutMenuUpdate = () => ipcMain.emit(UPDATE_SHORTCUT_MENU);
 
     private onClosed = () => {
         ipcMain.emit(UPDATE_SHORTCUT_MENU);
@@ -401,6 +406,8 @@ export class CallsWidgetWindow {
 
         // Update menu to show the developer tools option for this window.
         ipcMain.emit(UPDATE_SHORTCUT_MENU);
+        this.popOut.webContents.on('devtools-focused', this.emitShortcutMenuUpdate);
+        this.popOut.webContents.on('devtools-closed', this.emitShortcutMenuUpdate);
 
         const popOutWebContentsId = win.webContents.id;
         this.popOut.on('closed', () => {
@@ -529,7 +536,7 @@ export class CallsWidgetWindow {
         if (!serverURL) {
             throw new Error('handleGetDesktopSources: serverURL not found');
         }
-        if (!await PermissionsManager.doPermissionRequest(view.webContentsId, 'screenShare', {requestingUrl: serverURL.toString(), isMainFrame: false})) {
+        if (!await PermissionsManager.doPermissionRequest(view.webContentsId, 'display-capture', {requestingUrl: serverURL.toString(), isMainFrame: false})) {
             throw new Error('permissions denied');
         }
 
@@ -579,7 +586,7 @@ export class CallsWidgetWindow {
 
             // We only want to show the error message once to avoid spamming the user with dialog boxes
             if (!this.seenErrorMessage) {
-                dialog.showErrorBox(
+                MessageModal.showErrorModal(
                     localizeMessage('callsWidgetWindow.cannotStartCall.title', 'Cannot Start Call'),
                     localizeMessage('callsWidgetWindow.cannotStartCall.message', 'There is an in-progress call on another server that must be ended before joining a new call.'),
                 );

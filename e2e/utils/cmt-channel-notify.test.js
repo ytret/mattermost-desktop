@@ -113,6 +113,47 @@ describe('cmt-channel-notify', () => {
             });
         });
 
+        // PR and master runs dispatch MM_SERVER_VERSION as a branch ref, not semver.
+        // These used to return null, which silently dropped the leg from the per-OS
+        // rollup and left e2e/<os> reporting "E2E incomplete — no results for this OS".
+        it('parses job names whose server version is a branch ref, not semver', () => {
+            assert.deepEqual(parseCmtJobName('e2e-on-ubuntu-latest-master'), {
+                os: 'linux',
+                serverVersion: 'master',
+                runner: 'ubuntu-latest',
+                kind: 'e2e',
+            });
+            assert.deepEqual(parseCmtJobName('e2e-on-macos-26-master'), {
+                os: 'macos',
+                serverVersion: 'master',
+                runner: 'macos-26',
+                kind: 'e2e',
+            });
+            assert.deepEqual(parseCmtJobName('e2e-on-windows-2022-master'), {
+                os: 'windows',
+                serverVersion: 'master',
+                runner: 'windows-2022',
+                kind: 'e2e',
+            });
+            assert.deepEqual(parseCmtJobName('e2e-on-ubuntu-22.04-release-11.9'), {
+                os: 'linux',
+                serverVersion: 'release-11.9',
+                runner: 'ubuntu-22.04',
+                kind: 'e2e',
+            });
+        });
+
+        // Splitting on the version shape instead of the runner would read this as
+        // runner `ubuntu-latest-release` + version `11.9.0`.
+        it('keeps a hyphenated version out of the runner capture', () => {
+            assert.deepEqual(parseCmtJobName('e2e-on-ubuntu-latest-release-11.9.0'), {
+                os: 'linux',
+                serverVersion: 'release-11.9.0',
+                runner: 'ubuntu-latest',
+                kind: 'e2e',
+            });
+        });
+
         it('parses policy-tests job names', () => {
             assert.deepEqual(parseCmtJobName('policy-tests-macos'), {
                 os: 'macos',
@@ -126,6 +167,37 @@ describe('cmt-channel-notify', () => {
                 runner: 'windows',
                 kind: 'policy',
             });
+        });
+
+        it('parses Playwright shard suffixes without folding them into the runner or version', () => {
+            assert.deepEqual(parseCmtJobName('e2e-on-ubuntu-latest-master-1-of-3'), {
+                os: 'linux',
+                serverVersion: 'master',
+                runner: 'ubuntu-latest',
+                kind: 'e2e',
+                shard: '1-of-3',
+            });
+            assert.deepEqual(parseCmtJobName('e2e-on-macos-26-release-11.9.0-2-of-2'), {
+                os: 'macos',
+                serverVersion: 'release-11.9.0',
+                runner: 'macos-26',
+                kind: 'e2e',
+                shard: '2-of-2',
+            });
+            assert.deepEqual(parseCmtJobName('e2e-on-windows-2022-12.0.0-rc1-1-of-3'), {
+                os: 'windows',
+                serverVersion: '12.0.0-rc1',
+                runner: 'windows-2022',
+                kind: 'e2e',
+                shard: '1-of-3',
+            });
+        });
+
+        it('keeps unsharded CMT names without a shard field, including rc versions', () => {
+            assert.equal(parseCmtJobName('e2e-on-ubuntu-latest-9.6.1').shard, undefined);
+            const macRc = parseCmtJobName('e2e-on-macos-26-11.9.0-rc.3');
+            assert.equal(macRc.serverVersion, '11.9.0-rc.3');
+            assert.equal(macRc.shard, undefined);
         });
 
         it('returns null for unexpected names', () => {

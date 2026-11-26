@@ -141,12 +141,16 @@ export class ServerHub {
             return;
         }
 
-        const modalPromise = ModalManager.addModal<UniqueServerWithPermissions, {server: Server; permissions: Permissions}>(
-            ModalConstants.EDIT_SERVER_MODAL,
+        ServerManager.updateCurrentServer(id);
+        const modalPromise = ModalManager.addPriorityModal<UniqueServerWithPermissions, {server: Server; permissions: Permissions}>(
+            `${ModalConstants.EDIT_SERVER_MODAL}-${id}`,
             'mattermost-desktop://renderer/editServer.html',
             getLocalPreload('internalAPI.js'),
             {server: server.toUniqueServer(), permissions: PermissionsManager.getForServer(server) ?? {}},
-            mainWindow);
+            mainWindow,
+            false,
+            id,
+        );
 
         modalPromise.then(async (data) => {
             if (!server.isPredefined) {
@@ -173,12 +177,15 @@ export class ServerHub {
             return;
         }
 
-        const modalPromise = ModalManager.addModal<null, boolean>(
-            ModalConstants.REMOVE_SERVER_MODAL,
+        ServerManager.updateCurrentServer(id);
+        const modalPromise = ModalManager.addPriorityModal<null, boolean>(
+            `${ModalConstants.REMOVE_SERVER_MODAL}-${id}`,
             'mattermost-desktop://renderer/removeServer.html',
             getLocalPreload('internalAPI.js'),
             null,
             mainWindow,
+            false,
+            id,
         );
 
         modalPromise.then(async (remove) => {
@@ -454,10 +461,10 @@ export class ServerHub {
         const serverInfo = new ServerInfo(server);
         try {
             // Ping server first for pre-auth - config endpoint might be whitelisted
-            await serverInfo.pingServer();
+            await serverInfo.pingServer(session.fromPartition('server-validation'));
 
             // Only proceed to fetch config if ping is successful
-            const remoteInfo = await serverInfo.fetchConfigData();
+            const remoteInfo = await serverInfo.fetchConfigData(session.fromPartition('server-validation'));
             return {data: remoteInfo};
         } catch (error) {
             return {error: error as Error & { errorReason?: ErrorReason }};

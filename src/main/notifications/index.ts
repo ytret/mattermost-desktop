@@ -14,7 +14,9 @@ import {Logger} from 'common/log';
 import ServerManager from 'common/servers/serverManager';
 import viewManager from 'common/views/viewManager';
 import DeveloperMode from 'main/developerMode';
+import {localizeMessage} from 'main/i18nManager';
 import PermissionsManager from 'main/security/permissionsManager';
+import {openExternalSafely} from 'main/utils';
 
 import getLinuxDoNotDisturb from './dnd-linux';
 import getWindowsDoNotDisturb from './dnd-windows';
@@ -195,6 +197,50 @@ class NotificationManager {
         download.show();
     }
 
+    public async displayServerModal(serverId: string) {
+        if (!Notification.isSupported()) {
+            log.error('notification not supported');
+            return;
+        }
+        if (await getDoNotDisturb()) {
+            return;
+        }
+
+        const server = ServerManager.getServer(serverId);
+        if (!server) {
+            return;
+        }
+
+        const notificationKey = `serverModal-${serverId}`;
+        const notification = new Notification({
+            title: localizeMessage('main.notifications.serverModal.title', '{serverName} needs your attention', {serverName: server.name}),
+            body: localizeMessage('main.notifications.serverModal.body', 'Switch to this server to respond.'),
+            silent: false,
+        });
+        this.allActiveNotifications?.set(notificationKey, notification);
+
+        notification.on('show', () => {
+            flashFrame(true);
+        });
+
+        notification.on('click', () => {
+            MainWindow.show();
+            if (ServerManager.getServer(serverId)) {
+                ServerManager.updateCurrentServer(serverId);
+            }
+            this.allActiveNotifications?.delete(notificationKey);
+        });
+
+        notification.on('close', () => {
+            this.allActiveNotifications?.delete(notificationKey);
+        });
+
+        notification.on('failed', () => {
+            this.allActiveNotifications?.delete(notificationKey);
+        });
+        notification.show();
+    }
+
     public async displayUpgrade(version: string, handleUpgrade: () => void) {
         if (!Notification.isSupported()) {
             log.error('notification not supported');
@@ -235,10 +281,10 @@ class NotificationManager {
     private openNotificationPreferences() {
         switch (process.platform) {
         case 'darwin':
-            shell.openExternal('x-apple.systempreferences:com.apple.preference.notifications?Notifications');
+            openExternalSafely('x-apple.systempreferences:com.apple.preference.notifications?Notifications');
             break;
         case 'win32':
-            shell.openExternal('ms-settings:notifications');
+            openExternalSafely('ms-settings:notifications');
             break;
         }
     }
@@ -267,7 +313,7 @@ export async function getDoNotDisturb() {
     return false;
 }
 
-function flashFrame(flash: boolean) {
+export function flashFrame(flash: boolean) {
     if (process.platform === 'linux' || process.platform === 'win32') {
         if (Config.notifications.flashWindow) {
             MainWindow.get()?.flashFrame(flash);

@@ -67,6 +67,7 @@ import updateNotifier from 'main/updateNotifier';
 import UserActivityMonitor from 'main/UserActivityMonitor';
 
 import {
+    handleAppActivate,
     handleAppBeforeQuit,
     handleAppBrowserWindowCreated,
     handleAppCertificateError,
@@ -189,7 +190,7 @@ function initializeAppEventListeners() {
     app.on('second-instance', handleAppSecondInstance);
     app.on('window-all-closed', handleAppWindowAllClosed);
     app.on('browser-window-created', handleAppBrowserWindowCreated);
-    app.on('activate', () => MainWindow.show());
+    app.on('activate', handleAppActivate);
     app.on('before-quit', handleAppBeforeQuit);
     app.on('certificate-error', handleAppCertificateError);
     app.on('child-process-gone', handleChildProcessGone);
@@ -372,6 +373,15 @@ async function initializeAfterAppReady() {
         }
 
         downloadsManager.webRequestOnHeadersReceivedHandler(details, callback);
+    });
+
+    // Attach this to the server-validation session to handle pre-auth headers for server validation as well
+    session.fromPartition('server-validation').webRequest.onHeadersReceived((details, callback) => {
+        if (PreAuthManager.preAuthHeaderOnHeadersReceivedHander(details, callback)) {
+            return;
+        }
+
+        callback({});
     });
 
     defaultSession.webRequest.onBeforeSendHeaders((details, callback) => {

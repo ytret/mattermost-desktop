@@ -10,14 +10,13 @@ import type {
     WebContents} from 'electron';
 import {
     app,
-    dialog,
     ipcMain,
-    shell,
     systemPreferences,
 } from 'electron';
 
 import CallsWidgetWindow from 'app/callsWidgetWindow';
 import MainWindow from 'app/mainWindow/mainWindow';
+import MessageModal from 'app/mainWindow/modals/messageModal';
 import WebContentsManager from 'app/views/webContentsManager';
 import {
     GET_MEDIA_ACCESS_STATUS,
@@ -26,13 +25,16 @@ import {
     UPDATE_PATHS,
 } from 'common/communication';
 import Config from 'common/config';
+import {migratePermissions} from 'common/config/migrationPreferences';
 import JsonFileManager from 'common/JsonFileManager';
 import {Logger} from 'common/log';
 import type {MattermostServer} from 'common/servers/MattermostServer';
 import {isTrustedURL, parseURL} from 'common/utils/url';
 import {t} from 'common/utils/util';
+import ViewManager from 'common/views/viewManager';
 import {permissionsJson} from 'main/constants';
 import {localizeMessage} from 'main/i18nManager';
+import {openExternalSafely} from 'main/utils';
 
 import type {Permissions} from 'types/permissions';
 
@@ -46,7 +48,7 @@ const supportedPermissionTypes = [
     'fullscreen',
     'openExternal',
     'clipboard-sanitized-write',
-    'screenShare',
+    'display-capture',
 ];
 
 // permissions that require a dialog
@@ -55,7 +57,7 @@ const authorizablePermissionTypes = [
     'geolocation',
     'notifications',
     'openExternal',
-    'screenShare',
+    'display-capture',
 ];
 
 type PermissionsByOrigin = {
@@ -69,6 +71,15 @@ export class PermissionsManager extends JsonFileManager<PermissionsByOrigin> {
 
     constructor(file: string) {
         super(file);
+
+        // JsonFileManager only falls back to {} when parsing fails, so a file containing `null` needs this too
+        this.json = this.json ?? {};
+
+        if (migratePermissions(this.json)) {
+            this.writeToFile().catch((error) => {
+                log.error('Failed to save the migrated permissions', {error});
+            });
+        }
 
         this.inflightPermissionChecks = new Map();
 
@@ -143,14 +154,19 @@ export class PermissionsManager extends JsonFileManager<PermissionsByOrigin> {
         }
 
         let serverURL: URL | undefined;
+        let serverId: string | undefined;
         if (CallsWidgetWindow.isCallsWidget(webContentsId)) {
             serverURL = CallsWidgetWindow.getViewURL();
+            if (CallsWidgetWindow.mainViewId) {
+                serverId = ViewManager.getView(CallsWidgetWindow.mainViewId)?.serverId;
+            }
         } else {
             const view = WebContentsManager.getViewByWebContentsId(webContentsId);
             if (!view) {
                 return false;
             }
             serverURL = WebContentsManager.getServerURLByViewId(view.id);
+            serverId = view.serverId;
         }
 
         if (!serverURL) {
@@ -194,7 +210,7 @@ export class PermissionsManager extends JsonFileManager<PermissionsByOrigin> {
             }
 
             // Make sure we don't pop multiple dialogs for the same permission check
-            const permissionKey = `${permissionOrigin}:${permission}`;
+            const permissionKey = `${serverId}:${permissionOrigin}:${permission}`;
             if (this.inflightPermissionChecks.has(permissionKey)) {
                 return this.inflightPermissionChecks.get(permissionKey)!;
             }
@@ -206,7 +222,7 @@ export class PermissionsManager extends JsonFileManager<PermissionsByOrigin> {
                 }
 
                 // Show the dialog to ask the user
-                dialog.showMessageBox(mainWindow, {
+                MessageModal.showMessageModal({
                     title: localizeMessage('main.permissionsManager.checkPermission.dialog.title', 'Permission Requested'),
                     message: localizeMessage(`main.permissionsManager.checkPermission.dialog.message.${permission}`, '{appName} ({url}) is requesting the "{permission}" permission.', {appName: app.name, url: dialogOrigin, permission, externalURL: details.externalURL}),
                     detail: localizeMessage(`main.permissionsManager.checkPermission.dialog.detail.${permission}`, 'Would you like to grant {appName} this permission?', {appName: app.name}),
@@ -216,7 +232,9 @@ export class PermissionsManager extends JsonFileManager<PermissionsByOrigin> {
                         localizeMessage('label.denyPermanently', 'Deny Permanently'),
                         localizeMessage('label.allow', 'Allow'),
                     ],
-                }).then(({response}) => {
+                    defaultId: 2,
+                    cancelId: 0,
+                }, {serverId}).then(({response}) => {
                     // Save their response
                     const newPermission = {
                         allowed: response === 2,
@@ -254,8 +272,8 @@ export class PermissionsManager extends JsonFileManager<PermissionsByOrigin> {
         }) ?? false;
     };
 
-    private openWindowsCameraPreferences = () => shell.openExternal('ms-settings:privacy-webcam');
-    private openWindowsMicrophonePreferences = () => shell.openExternal('ms-settings:privacy-microphone');
+    private openWindowsCameraPreferences = () => openExternalSafely('ms-settings:privacy-webcam');
+    private openWindowsMicrophonePreferences = () => openExternalSafely('ms-settings:privacy-microphone');
     private handleGetMediaAccessStatus = (event: IpcMainInvokeEvent, mediaType: 'microphone' | 'camera' | 'screen') => systemPreferences.getMediaAccessStatus(mediaType);
 }
 
@@ -263,12 +281,12 @@ t('main.permissionsManager.checkPermission.dialog.message.media');
 t('main.permissionsManager.checkPermission.dialog.message.geolocation');
 t('main.permissionsManager.checkPermission.dialog.message.notifications');
 t('main.permissionsManager.checkPermission.dialog.message.openExternal');
-t('main.permissionsManager.checkPermission.dialog.message.screenShare');
+t('main.permissionsManager.checkPermission.dialog.message.display-capture');
 t('main.permissionsManager.checkPermission.dialog.detail.media');
 t('main.permissionsManager.checkPermission.dialog.detail.geolocation');
 t('main.permissionsManager.checkPermission.dialog.detail.notifications');
 t('main.permissionsManager.checkPermission.dialog.detail.openExternal');
-t('main.permissionsManager.checkPermission.dialog.detail.screenShare');
+t('main.permissionsManager.checkPermission.dialog.detail.display-capture');
 
 let permissionsManager = new PermissionsManager(permissionsJson);
 
